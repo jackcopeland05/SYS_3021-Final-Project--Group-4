@@ -27,10 +27,12 @@ _LABEL_COLORS = ["#bdbdbd", "#d62728", "#f2c200", "#a6d8a0"]
 _LABEL_NAMES = ["outside body", "tumor", "critical", "normal"]
 
 
-def compute_metrics(problem, solution):
+def compute_metrics(problem, solution, sweep):
     """Return (metrics, dose) for `solution` (a solve.Solution) of `problem` (a geometry.ProblemData).
 
-    metrics is a JSON-ready nested dict; dose = D @ x as a |P| x n_S float array (NaN unless Optimal).
+    `problem`/`solution` are the chosen number of sessions k (problem.cfg.n_S == k) and `sweep` is
+    the dict from solve.solve_sessions; it goes into metrics["sessions"] (when a plan exists).
+    metrics is a JSON-ready nested dict; dose = D @ x as a |P| x k float array (NaN unless Optimal).
     """
     cfg = problem.cfg
     T, C, N = problem.T, problem.C, problem.N
@@ -55,6 +57,7 @@ def compute_metrics(problem, solution):
             },
         },
         "all_checks_passed": None,
+        "sessions": None,
         "objective": None,
         "solver_vs_recomputed": None,
         "tumor": None,
@@ -68,6 +71,18 @@ def compute_metrics(problem, solution):
 
     if solution.status != "Optimal":
         return metrics, np.full((len(problem.pixel_rc), n_S), np.nan)
+
+    # --- Number of sessions: the chosen k and the objective of every k tried ---
+    metrics["sessions"] = {
+        "chosen": int(sweep["chosen"]),
+        "n_S_max": int(sweep["n_S_max"]),
+        "K": int(sweep["K"]),
+        "by_k": [
+            {"k": int(r["k"]), "status": r["status"],
+             "objective": None if r["objective"] is None else num(r["objective"])}
+            for r in sweep["rows"]
+        ],
+    }
 
     # --- Canonical dose and the recomputed z, e, E ---
     x = solution.x
@@ -222,9 +237,9 @@ def compute_metrics(problem, solution):
     return metrics, dose
 
 
-def make_plots(problem, solution):
-    """Return {name: Figure}: "anatomy" always; "dose_cumulative" and "critical_peaks" when Optimal
-    ("critical_peaks" only if C is non-empty)."""
+def make_plots(problem, solution, sweep):
+    """Return {name: Figure}: "anatomy" always; "dose_cumulative", "objective_by_sessions" and
+    "critical_peaks" when Optimal ("critical_peaks" only if C is non-empty)."""
     cfg = problem.cfg
     grid = problem.grid
     n_rows, n_cols = grid.shape
@@ -289,6 +304,24 @@ def make_plots(problem, solution):
     grid_axes(ax, f"Cumulative dose over {cfg.n_S} sessions")
     figs["dose_cumulative"] = fig
 
+    # --- Objective by number of sessions k (infeasible k left out), chosen k highlighted ---
+    ks = [r["k"] for r in sweep["rows"] if r["objective"] is not None]
+    objs = [r["objective"] for r in sweep["rows"] if r["objective"] is not None]
+    chosen = sweep["chosen"]
+    chosen_obj = next(r["objective"] for r in sweep["rows"] if r["k"] == chosen)
+    fig = Figure(figsize=(6, 4), layout="constrained")
+    ax = fig.add_subplot()
+    ax.plot(ks, objs, marker="o", color="#4c72b0", label="optimal objective for k sessions")
+    ax.plot([chosen], [chosen_obj], marker="*", markersize=16, color="#d62728", linestyle="none",
+            label=f"chosen: k = {chosen} (objective {chosen_obj:.4f})")
+    if len(ks) <= 30:
+        ax.set_xticks(ks)
+    ax.set_xlabel("number of sessions k")
+    ax.set_ylabel("objective")
+    ax.set_title(f"Objective by number of sessions (k = 1..{sweep['K']}, max n_S = {sweep['n_S_max']})")
+    ax.legend(loc="upper center", frameon=False)
+    figs["objective_by_sessions"] = fig
+
     # --- Per-session critical peaks z_s (recomputed) with the u_C limit ---
     if len(problem.C):
         z = dose[problem.C].max(axis=0)
@@ -332,6 +365,16 @@ def format_summary(metrics):
     if run["status"] != "Optimal":
         lines.append("No plan: the LP was not solved to optimality, so there are no metrics.")
         return "\n".join(lines) + "\n"
+
+    ses = metrics["sessions"]
+    lines.append(
+        f"Sessions used: {ses['chosen']}  (best of k = 1..{ses['K']}; max n_S = {ses['n_S_max']}; "
+        f"ties go to fewer sessions)"
+    )
+    lines.append("  k   status        objective")
+    for r in ses["by_k"]:
+        mark = "  <- chosen" if r["k"] == ses["chosen"] else ""
+        lines.append(f"  {r['k']:<3} {r['status']:<13} {f(r['objective']):>9}{mark}")
 
     obj = metrics["objective"]
     tw, tu = obj["terms_weighted"], obj["terms_unweighted"]

@@ -15,7 +15,7 @@ Choose the intensity of each beamlet in each treatment session so that:
 
 | Set | Index | Meaning |
 |---|---|---|
-| S = {1, ..., n_S} | s | Treatment session. n_S is the number of sessions. |
+| S = {1, ..., k} | s | Treatment session. k is the number of sessions used, chosen by the session sweep (section 9) from 1..n_S; n_S is the maximum number of sessions available. |
 | P | p | One pixel: a grid cell inside the body, identified by (row, column). |
 | T ⊂ P | p | Tumor pixels |
 | C ⊂ P | p | Critical-structure pixels |
@@ -77,7 +77,7 @@ min   w^pk * sum_{s in S} z_s
 
 **Tumor region (strict)**
 - (T1) `d_ps >= ℓ^T`  for all p ∈ T, s ∈ S
-- (T2) `sum_{s in S} d_ps >= L^T`  for all p ∈ T (only binds when L^T > n_S * ℓ^T)
+- (T2) `sum_{s in S} d_ps >= L^T`  for all p ∈ T (only binds when L^T > k * ℓ^T)
 - (T3) `sum_{s in S} d_ps <= U^T`  for all p ∈ T
 
 **Critical structures (strict, no slack)**
@@ -113,14 +113,14 @@ These are decisions already made by the group. Do not change them without asking
 ## 9. Known behavior and limitations
 
 - **Sessions are interchangeable.** Beamlet intensities may differ from session to session (x_bs is indexed by session and no constraint links sessions). Because thresholds do not vary by session, the session-average plan is also feasible and at least as good, so any session-to-session variation in the output is arbitrary and must not be interpreted. Mathematically, `x_bs = x_b1` could be added without loss, but **the model deliberately keeps the full per-session variables** (multi-session formulation required).
-- **"Potential" sessions:** choosing which sessions to use would need binary variables and would no longer be an LP. Mention under limitations.
+- **Number of sessions (session sweep):** n_S is the *maximum* number of sessions. Choosing the number of sessions inside one LP would need binary variables, so instead the LP above is solved once for every k = 1..K (K = min(n_S, floor(U^T / ℓ^T)) when ℓ^T > 0, since k·ℓ^T > U^T makes (T1)+(T3) infeasible; K = n_S when ℓ^T = 0), and the plan uses the k with the lowest objective, preferring fewer sessions on ties (relative 1e-6). Each solve is a pure LP. Every session that is used still receives at least ℓ^T per tumor pixel (T1), so adding sessions adds mandatory dose: too few sessions forces large per-session doses (overage), too many forces k·ℓ^T past L^T. Which *specific* calendar sessions to use is still not modeled (sessions are interchangeable).
 - Large volume weights make the model behave like Formulation 4, and hot spots return.
 - Hard constraints can make the model infeasible (e.g. every beamlet reaching a tumor pixel overdoses a critical pixel on the way).
 
 ## 10. Pre-solve data checks
 
-- `n_S * ℓ^T <= U^T` is necessary for feasibility. If it fails, no plan exists.
-- If `n_S * ℓ^T >= L^T`, constraint (T2) is redundant.
+- `ℓ^T <= U^T` is necessary for any plan (k = 1). For a given k, `k * ℓ^T <= U^T` is necessary; larger k are skipped by the sweep.
+- If `k * ℓ^T >= L^T`, constraint (T2) is redundant for that k.
 - To diagnose infeasibility, temporarily add slack to (C1) and (C2) and see which pixels use it.
 
 ## 11. Reference test instance (for validating an implementation)

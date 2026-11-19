@@ -3,8 +3,8 @@
     python run.py --config data/configs/baseline.json
 
 Pipeline (no modeling logic here):
-load_config -> load_anatomy -> build_problem -> build_model -> solve -> compute_metrics
--> make_plots -> format_summary -> save_run.
+load_config -> load_anatomy -> build_problem -> solve_sessions (one build_model + solve per number
+of sessions k <= n_S, keeps the best k) -> compute_metrics -> make_plots -> format_summary -> save_run.
 
 Paths in the config (anatomy_path) and the results/ folder are relative to the project root,
 which is the folder holding this file. Exit code 0 whenever the pipeline finishes (an infeasible
@@ -21,8 +21,7 @@ sys.path.insert(0, str(ROOT / "src"))
 from rtlp.analysis import compute_metrics, format_summary, make_plots  # noqa: E402
 from rtlp.geometry import build_problem  # noqa: E402
 from rtlp.io import load_anatomy, load_config, save_run  # noqa: E402
-from rtlp.model import build_model  # noqa: E402
-from rtlp.solve import solve  # noqa: E402
+from rtlp.solve import solve_sessions  # noqa: E402
 
 
 def main():
@@ -37,14 +36,13 @@ def main():
         print(f"error: {exc}", file=sys.stderr)
         return 1
 
-    problem = build_problem(grid, cfg)
-    solution = solve(build_model(problem))
-    metrics, dose = compute_metrics(problem, solution)
-    figures = make_plots(problem, solution)
+    problem, solution, sweep = solve_sessions(build_problem(grid, cfg))
+    metrics, dose = compute_metrics(problem, solution, sweep)
+    figures = make_plots(problem, solution, sweep)
     summary = format_summary(metrics)
 
     print(summary, end="")
-    folder = save_run(ROOT, args.config, cfg, solution, metrics, dose, figures, summary)
+    folder = save_run(ROOT, args.config, problem, solution, metrics, dose, figures, summary)
     print(f"results written to {folder}")
     return 0
 

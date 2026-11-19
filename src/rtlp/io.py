@@ -86,11 +86,12 @@ def load_config(path):
         if raw[key] < 0:
             raise ValueError(f"config key '{key}': weight must be >= 0, got {raw[key]!r}")
 
-    # --- Feasibility: n_S sessions at l_T each must fit under the cumulative tumor cap ---
-    if raw["n_S"] * raw["l_T"] > raw["U_T"]:
+    # --- Feasibility: n_S is the MAXIMUM number of sessions (the plan picks k <= n_S), so only
+    #     k = 1 has to fit: one session at l_T must not exceed the cumulative tumor cap ---
+    if raw["l_T"] > raw["U_T"]:
         raise ValueError(
-            f"config key 'U_T': n_S*l_T = {raw['n_S']}*{raw['l_T']} = {raw['n_S'] * raw['l_T']} "
-            f"> U_T = {raw['U_T']}, so no plan can exist"
+            f"config key 'U_T': l_T = {raw['l_T']} > U_T = {raw['U_T']}, so even a single session "
+            f"overdoses the tumor and no plan can exist"
         )
 
     values = {k: raw[k] for k in expected}
@@ -144,16 +145,21 @@ def load_anatomy(path):
     return grid
 
 
-def save_run(root, config_path, cfg, solution, metrics, dose, figures, summary):
+def save_run(root, config_path, problem, solution, metrics, dose, figures, summary):
     """Write one run to a new folder results/<YYYY-MM-DD_HHMM>_<label>/ under `root`; return its Path.
 
     root: project root (anatomy_path and results/ are relative to it).
     config_path: the config file the run was loaded from.
-    Contents: anatomy.csv (byte copy), config.json (same keys, anatomy_path pointing at the copied
-    anatomy.csv so `python run.py --config results/<run>/config.json` reproduces the run), x.npy,
-    dose.npy (NaN-filled unless Optimal), metrics.json, summary.txt and plots/<name>.png (150 dpi).
+    problem, solution, dose: the chosen number of sessions k (problem.cfg.n_S == k).
+    Contents: anatomy.csv (byte copy), config.json (the original JSON with its original n_S, and
+    anatomy_path pointing at the copied anatomy.csv, so `python run.py --config
+    results/<run>/config.json` repeats the run), metrics.json, summary.txt, plots/<name>.png (150 dpi)
+    and, only if the status is "Optimal", two labeled CSVs written at full precision (%.17g):
+      x.csv     one row per beamlet:   side, line, s1..sk
+      dose.csv  one row per body pixel: row, col, label, s1..sk, cumulative   (dose = D @ x)
     An existing folder is never overwritten: a suffix _2, _3, ... is added instead.
     """
+    cfg = problem.cfg
     root = Path(root)
     results = root / "results"
     base = f"{datetime.now():%Y-%m-%d_%H%M}_{cfg.label}"
@@ -173,9 +179,21 @@ def save_run(root, config_path, cfg, solution, metrics, dose, figures, summary):
         json.dump(raw, f, indent=2)
         f.write("\n")
 
-    # --- Arrays, metrics, summary ---
-    np.save(folder / "x.npy", solution.x)
-    np.save(folder / "dose.npy", dose)
+    # --- Plan and dose as labeled CSVs (only when there is a plan) ---
+    if solution.status == "Optimal":
+        sessions = [f"s{s + 1}" for s in range(cfg.n_S)]
+        with open(folder / "x.csv", "w", encoding="utf-8", newline="") as f:
+            f.write(",".join(["side", "line"] + sessions) + "\n")
+            for (side, line), row in zip(problem.beamlets, solution.x):
+                f.write(",".join([side, str(line)] + [f"{v:.17g}" for v in row]) + "\n")
+        label_names = {1: "tumor", 2: "critical", 3: "normal"}
+        with open(folder / "dose.csv", "w", encoding="utf-8", newline="") as f:
+            f.write(",".join(["row", "col", "label"] + sessions + ["cumulative"]) + "\n")
+            for (r, c), row in zip(problem.pixel_rc, dose):
+                cells = [str(r), str(c), label_names[int(problem.grid[r, c])]]
+                f.write(",".join(cells + [f"{v:.17g}" for v in row] + [f"{row.sum():.17g}"]) + "\n")
+
+    # --- Metrics, summary ---
     with open(folder / "metrics.json", "w", encoding="utf-8") as f:
         json.dump(metrics, f, indent=2, allow_nan=False)
         f.write("\n")

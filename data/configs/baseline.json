@@ -2,7 +2,7 @@
   "label": "baseline",
   "anatomy_path": "data/input/reference_9x9.csv",
   "alpha": 0.08,
-  "n_S": 4,
+  "n_S": 10000,
   "l_T": 1,
   "L_T": 6,
   "U_T": 9,

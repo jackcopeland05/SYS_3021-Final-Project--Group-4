@@ -20,7 +20,7 @@ Deliverables (this repo covers the code only; the <=12-slide deck is handled sep
 ## Hard constraints from the course
 
 - **Modeling library is PuLP. This is set by the professor and cannot change.** Do not introduce scipy `linprog`, Pyomo, CVXPY, Gurobi, etc. as modeling layers. For the underlying LP backend that PuLP calls, use whichever is fastest (prefer HiGHS through PuLP; fall back to CBC if unavailable).
-- The model must stay a pure LP (no binary/integer variables). Choosing *which* sessions to use would need binaries and is only a stated limitation.
+- The model must stay a pure LP (no binary/integer variables). The **number** of sessions is chosen by a session sweep instead (one LP per k = 1..K, keep the lowest objective, ties to fewer sessions; see `model.md` section 9): config `n_S` is the **maximum** number of sessions. Choosing *which specific* sessions to use is still only a stated limitation.
 - The model is multi-session: keep the full x_bs, d_ps variables. Do **not** collapse sessions with `x_bs = x_b1`. (Sessions are interchangeable under constant thresholds; per-session variation in the output is arbitrary and must not be interpreted.)
 
 ## Input and configuration
@@ -28,7 +28,7 @@ Deliverables (this repo covers the code only; the <=12-slide deck is handled sep
 - **Anatomy input:** a CSV of integer labels, one cell per pixel: `0` outside body, `1` tumor, `2` critical, `3` normal. Each cell has exactly one label, so the "red beats yellow beats normal" rule is applied upstream; the code never resolves overlaps. Code 0 cells are excluded from P (no constraints, no objective terms).
 - **Config:** a single flat JSON file holds every parameter: label (names the results folder), anatomy_path (relative to the project root; `run.py` is always run from the root), alpha, n_S, l_T, L_T, U_T, u_C, U_C, u_N, U_N, the five weights (w_pk, w_C, w_N, lambda_e, lambda_E). No description/comment fields; no solver key. `run.py` takes **only** `--config <path>` via argparse (no per-parameter flags).
 - Sets and D are never stored in config. They are always recomputed from the CSV and config.
-- Config validation lives in one place and fails loudly, e.g. n_S * l_T <= U_T (otherwise no plan exists). If n_S * l_T >= L_T, (T2) is redundant.
+- Config validation lives in one place and fails loudly, e.g. l_T <= U_T (otherwise not even one session is possible). The sweep itself skips k with k * l_T > U_T. If k * l_T >= L_T, (T2) is redundant for that k.
 
 ## Geometry rules (D matrix)
 
@@ -53,7 +53,8 @@ Final Project/
 │   ├── io.py            ALL file I/O: load_config (validate), load_anatomy (rectangular, codes 0-3 only, >=1 tumor pixel), save_run
 │   ├── geometry.py      pure functions, no files/solver: build_sets, build_beamlets, build_D, build_problem(grid, cfg) -> ProblemData
 │   ├── model.py         build_model(ProblemData) -> LPModel(prob, x, d, z, e, E): PuLP model of Formulation 2
-│   ├── solve.py         solve(LPModel) -> Solution(status, objective, x, d, z, e, E as numpy arrays); handles
+│   ├── solve.py         solve(LPModel) -> Solution(status, objective, x, d, z, e, E as numpy arrays);
+│   │                    solve_sessions(ProblemData) sweeps k = 1..K and keeps the best k; handles
 │   │                    infeasible/unbounded. An infeasible status is itself the result: no slack is ever added
 │   │                    to the hard constraints (T1-T3, C1, C2) to force feasibility.
 │   └── analysis.py      works only on ProblemData + Solution arrays (no model object)
@@ -64,9 +65,9 @@ Final Project/
 
 Design rules:
 - Only `io.py` touches the filesystem. Only `model.py` and `solve.py` import PuLP.
-- Every run is reproducible from its results folder (config + anatomy copy, status, objective, `x.npy`, `dose.npy`, `metrics.json`, `plots/`).
-- Pipeline in `run.py`: load_config -> load_anatomy -> build_problem -> build_model -> solve -> compute_metrics -> save_run.
-- tqdm is used for progress display only, and only in `solve.py` (a live elapsed-time counter while the solver runs; one solve call reports no progress, so there is no percentage). A user decision outside `model.md`: do not remove it or spread it to other modules without asking.
+- Every run is reproducible from its results folder (config + anatomy copy, status, objective, `x.csv`, `dose.csv`, `metrics.json`, `plots/`).
+- Pipeline in `run.py`: load_config -> load_anatomy -> build_problem -> solve_sessions (build_model + solve per k) -> compute_metrics -> make_plots -> format_summary -> save_run.
+- tqdm is used for progress display only, and only in `solve.py`: `solve_sessions` shows one bar over k ("Solving sessions k"); a bare `solve` call shows a live elapsed-time counter (one solve call reports no progress), which `solve_sessions` turns off with `show_progress=False`. A user decision outside `model.md`: do not remove it or spread it to other modules without asking.
 - Code style (user preference): fewer, larger functions with their validation checks written inline (raise ValueError naming the bad key/row), not many tiny helpers. No pytest suite in `tests/`; verify with throwaway scripts instead.
 
 ## Metrics (analysis.py)
@@ -110,10 +111,12 @@ Status: the pipeline is complete. `src/rtlp/io.py` has `Config`, `load_config`, 
 - Backend: `pulp.HiGHS(msg=False)` if `.available()`, else `pulp.COIN_CMD(msg=False)` (CBC; there is no `PULP_CBC_CMD` in PuLP 4.x); `RuntimeError` only if neither exists. No time limit. HiGHS still prints a two-line banner despite `msg=False` (PuLP 4 behavior).
 - `Solution(status, objective, x, d, z, e, E, solver, solve_time)`: `status` is the plain enum name string (`"Optimal"`, `"Infeasible"`, ...); arrays are float64 with LPModel shapes, raw solver values (no clipping). Unless status is `"Optimal"`, `objective` and every array are NaN (same shapes). No status ever raises.
 - Verified 2026-11-19: baseline gives Optimal 3.5727 with both HiGHS and CBC, max |d - D@x| ~ 2e-16; L_T > U_T gives `"Infeasible"` with NaN arrays.
+- `solve_sessions(problem) -> (best_problem, best_solution, sweep)`: K = min(n_S, floor(U_T / l_T + 1e-9)) if l_T > 0, else n_S. For each k, `dataclasses.replace` the problem with `cfg.n_S = k` (D and sets unchanged), `build_model`, `solve(show_progress=False)`. Best = lowest objective; a later k wins only if lower by more than `SWEEP_TOL = 1e-6` relative (ties -> fewer sessions). `sweep = {"n_S_max", "K", "chosen" (None if no k Optimal), "rows": [{"k", "status", "objective"}]}`. If no k is Optimal, the last k's problem/solution are returned. Everything downstream sees `problem.cfg.n_S == k`; analysis puts the sweep in `metrics["sessions"]` (Optimal only), `format_summary` prints `Sessions used: k` plus an objective-by-k table, and `make_plots` adds `objective_by_sessions`.
+- Verified 2026-11-19 (baseline with n_S = 10000): K = 9, objectives 71.84, 34.72, 10.75, 3.5727 (k = 4, 5, 6 tie), 11.34, 23.09, 34.90; chosen k = 4, all checks passed. L_T = 10 gives Infeasible for every k (summary says Infeasible only, no x/dose CSVs). l_T = 0 with n_S = 12 sweeps all 12 and still chooses 4. `x.csv`/`dose.csv` reload exactly (max |D@x - dose| = 0).
 
 ## analysis.py conventions
 
-- `compute_metrics(problem, solution) -> (metrics, dose)`; `make_plots(problem, solution) -> {name: Figure}`; `format_summary(metrics) -> str` (the text run.py prints and save_run writes to `summary.txt`; infeasible runs get a short version). analysis never writes files: `io.save_run` dumps `metrics` to `metrics.json`, `dose` to `dose.npy` (|P| x n_S, P-index order) and calls `fig.savefig` for each figure into `plots/<name>.png`.
+- `compute_metrics(problem, solution, sweep) -> (metrics, dose)`; `make_plots(problem, solution, sweep) -> {name: Figure}`; `format_summary(metrics) -> str` (the text run.py prints and save_run writes to `summary.txt`; infeasible runs get a short version). analysis never writes files: `io.save_run` dumps `metrics` to `metrics.json`, `dose` to `dose.csv` and calls `fig.savefig` for each figure into `plots/<name>.png`.
 - Canonical dose is `D @ x`; the solver's d is used only in the (D0) check. z, e, E are recomputed from it (z_s = 0 when C is empty).
 - One absolute tolerance `TOL = 1e-6` for every check, every over-limit count and every binding test. Failed checks never raise: each tag in `metrics["checks"]` has `passed` and `worst_violation`, summarized by `metrics["all_checks_passed"]`. The objective check is relative: |recomputed - solver| <= TOL * max(1, |solver|).
 - `metrics` is plain JSON types only (no NaN; use `json.dumps(..., allow_nan=False)`). Per-session values are lists of length n_S (index 0 = session 1); the offending-pixel lists use 0-based sessions. An empty C or N gives `None` for that region's metrics. Unless the status is "Optimal", only `metrics["run"]` is filled in, every other section is `None`, and `dose` is NaN.
@@ -125,7 +128,7 @@ Status: the pipeline is complete. `src/rtlp/io.py` has `Config`, `load_config`, 
 
 - Project root = the folder holding `run.py` (`ROOT`); `src/` is put on `sys.path` from it, and `anatomy_path` and `results/` are resolved against it, so run.py works from any working directory. `--config` is resolved against the working directory, like any CLI argument.
 - Exit codes: 0 whenever the pipeline finishes, including an infeasible status and failed checks (the summary then has a `WARNING: some checks failed` line). `ValueError`/`FileNotFoundError` from loading print `error: <message>` to stderr, exit 1 and write nothing; any other exception keeps its traceback.
-- Console: the solver's tqdm counter, then the summary, then `results written to <path>`. No per-stage lines.
-- `save_run(root, config_path, cfg, solution, metrics, dose, figures, summary) -> Path` writes `results/<YYYY-MM-DD_HHMM>_<label>/` (local time; suffix `_2`, `_3`, ... if it exists, never overwrite): `anatomy.csv` (byte copy), `config.json` (the original JSON, same key order, with `anatomy_path` rewritten to the root-relative path of the copied `anatomy.csv`), `x.npy`, `dose.npy`, `metrics.json` (`allow_nan=False`), `summary.txt`, `plots/<name>.png` at 150 dpi. A folder is written for every completed solve, whatever its status (arrays NaN-filled when not Optimal).
+- Console: the tqdm bar over k, then the summary, then `results written to <path>`. No per-stage lines.
+- `save_run(root, config_path, problem, solution, metrics, dose, figures, summary) -> Path` (problem/solution/dose are the chosen k) writes `results/<YYYY-MM-DD_HHMM>_<label>/` (local time; suffix `_2`, `_3`, ... if it exists, never overwrite): `anatomy.csv` (byte copy), `config.json` (the original JSON, same key order, with `anatomy_path` rewritten to the root-relative path of the copied `anatomy.csv`), `metrics.json` (`allow_nan=False`), `summary.txt`, `plots/<name>.png` at 150 dpi, and, only when Optimal, `x.csv` (`side, line, s1..sk`) and `dose.csv` (`row, col, label, s1..sk, cumulative`) at `%.17g`. No .npy files. A folder is written for every completed run, whatever its status. The copied config keeps the original n_S (the maximum), so a re-run repeats the sweep.
 - Reproduce a run: `python run.py --config results/<run>/config.json`.
 - Verified 2026-11-19: baseline exits 0 with objective 3.5727 and all checks passed; a second run in the same minute gets `_2`; L_T = 10 > U_T gives an Infeasible folder (anatomy plot only) and exit 0; alpha = -1 and a missing config give `error: ...`, exit 1 and no folder; re-running from a results folder's `config.json` from another working directory reproduces 3.5727.
