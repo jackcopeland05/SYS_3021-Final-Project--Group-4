@@ -1,9 +1,11 @@
-"""All file I/O for the radiation therapy LP: loading/validating inputs and (later) saving runs.
+"""All file I/O for the radiation therapy LP: loading/validating inputs and saving runs.
 
 This is the only module that touches the filesystem.
 """
 
 import json
+import shutil
+from datetime import datetime
 from dataclasses import dataclass, fields
 from pathlib import Path
 
@@ -140,3 +142,49 @@ def load_anatomy(path):
         raise ValueError(f"anatomy {path}: no tumor pixel (code 1) found")
 
     return grid
+
+
+def save_run(root, config_path, cfg, solution, metrics, dose, figures, summary):
+    """Write one run to a new folder results/<YYYY-MM-DD_HHMM>_<label>/ under `root`; return its Path.
+
+    root: project root (anatomy_path and results/ are relative to it).
+    config_path: the config file the run was loaded from.
+    Contents: anatomy.csv (byte copy), config.json (same keys, anatomy_path pointing at the copied
+    anatomy.csv so `python run.py --config results/<run>/config.json` reproduces the run), x.npy,
+    dose.npy (NaN-filled unless Optimal), metrics.json, summary.txt and plots/<name>.png (150 dpi).
+    An existing folder is never overwritten: a suffix _2, _3, ... is added instead.
+    """
+    root = Path(root)
+    results = root / "results"
+    base = f"{datetime.now():%Y-%m-%d_%H%M}_{cfg.label}"
+    folder = results / base
+    n = 2
+    while folder.exists():
+        folder = results / f"{base}_{n}"
+        n += 1
+    (folder / "plots").mkdir(parents=True)
+
+    # --- Anatomy (byte copy) and a config that points at it ---
+    shutil.copyfile(root / cfg.anatomy_path, folder / "anatomy.csv")
+    with open(config_path, encoding="utf-8") as f:
+        raw = json.load(f)                       # keeps the original key order
+    raw["anatomy_path"] = (folder / "anatomy.csv").relative_to(root).as_posix()
+    with open(folder / "config.json", "w", encoding="utf-8") as f:
+        json.dump(raw, f, indent=2)
+        f.write("\n")
+
+    # --- Arrays, metrics, summary ---
+    np.save(folder / "x.npy", solution.x)
+    np.save(folder / "dose.npy", dose)
+    with open(folder / "metrics.json", "w", encoding="utf-8") as f:
+        json.dump(metrics, f, indent=2, allow_nan=False)
+        f.write("\n")
+    with open(folder / "summary.txt", "w", encoding="utf-8") as f:
+        f.write(summary)
+
+    # --- Plots ---
+    for name, fig in figures.items():
+        fig.savefig(folder / "plots" / f"{name}.png", dpi=150)
+        fig.clear()
+
+    return folder

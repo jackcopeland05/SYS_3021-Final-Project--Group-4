@@ -7,4 +7,5 @@ dependencies:
   - pulp
   - highspy
   - matplotlib
+  - tqdm
   - pytest

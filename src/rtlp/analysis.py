@@ -308,3 +308,76 @@ def make_plots(problem, solution):
         figs["critical_peaks"] = fig
 
     return figs
+
+
+def format_summary(metrics):
+    """Return a short human-readable summary of `metrics` (from compute_metrics).
+
+    run.py prints it and io.save_run writes it to summary.txt, so the two never disagree.
+    """
+    run = metrics["run"]
+    sz = run["sizes"]
+
+    def f(v, digits=4):
+        return "n/a" if v is None else f"{v:.{digits}f}"
+
+    def fl(vals, digits=3):
+        return "[" + ", ".join(f(v, digits) for v in vals) + "]"
+
+    solve_time = "n/a" if run["solve_time"] is None else f"{run['solve_time']:.2f} s"
+    lines = [
+        f"Status: {run['status']}  (solver {run['solver']}, {solve_time})",
+        f"Sizes:  |P|={sz['P']}  |T|={sz['T']}  |C|={sz['C']}  |N|={sz['N']}  |B|={sz['B']}  n_S={sz['n_S']}",
+    ]
+    if run["status"] != "Optimal":
+        lines.append("No plan: the LP was not solved to optimality, so there are no metrics.")
+        return "\n".join(lines) + "\n"
+
+    obj = metrics["objective"]
+    tw, tu = obj["terms_weighted"], obj["terms_unweighted"]
+    lines += [
+        f"Objective: {f(obj['solver'])}  (recomputed {f(obj['recomputed'])})",
+        "  term                 weighted    unweighted",
+    ]
+    for key, name in (
+        ("peak_sum", "peak sum"),
+        ("critical_volume", "critical volume"),
+        ("normal_volume", "normal volume"),
+        ("session_overage", "session overage"),
+        ("cumulative_overage", "cumulative overage"),
+    ):
+        lines.append(f"  {name:<20} {f(tw[key]):>9}   {f(tu[key]):>11}")
+
+    tumor = metrics["tumor"]
+    lines.append(
+        f"Tumor dose: per-session min {fl(tumor['min_per_session'])}, "
+        f"cumulative min/max {f(tumor['min_cumulative'], 3)} / {f(tumor['max_cumulative'], 3)}"
+    )
+
+    crit = metrics["critical"]
+    if crit is None:
+        lines.append("Critical: no critical pixels")
+    else:
+        lines.append(
+            f"Critical peaks z_s: {fl(crit['peak_per_session'])}  (sum {f(crit['peak_sum'], 3)}), "
+            f"cumulative max {f(crit['max_cumulative'], 3)}, total dose {f(crit['total_dose'], 3)}"
+        )
+
+    normal = metrics["normal"]
+    if normal is None:
+        lines.append("Normal: no normal pixels")
+    else:
+        lines.append(
+            f"Normal over u_N per session: count {normal['over_u_N_count_per_session']}, "
+            f"total {fl(normal['over_u_N_total_per_session'])}"
+        )
+        lines.append(
+            f"Normal over U_N cumulative: count {normal['over_U_N_count']}, total {f(normal['over_U_N_total'])}"
+        )
+
+    if metrics["all_checks_passed"]:
+        lines.append(f"All checks passed (tol {TOL:g}).")
+    else:
+        failed = [k for k, v in metrics["checks"].items() if not v["passed"]]
+        lines.append(f"WARNING: some checks failed: {', '.join(failed)} (see metrics.json)")
+    return "\n".join(lines) + "\n"
