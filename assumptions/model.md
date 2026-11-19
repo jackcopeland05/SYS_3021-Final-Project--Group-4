@@ -112,7 +112,7 @@ These are decisions already made by the group. Do not change them without asking
 
 ## 9. Known behavior and limitations
 
-- **Sessions are interchangeable.** Thresholds do not vary by session, so a plan repeating its session-average every session is feasible and at least as good. Any session-to-session variation in the solver output is arbitrary and must not be interpreted. Adding `x_bs = x_b1` for all b, s loses nothing and shrinks the model.
+- **Sessions are interchangeable.** Beamlet intensities may differ from session to session (x_bs is indexed by session and no constraint links sessions). Because thresholds do not vary by session, the session-average plan is also feasible and at least as good, so any session-to-session variation in the output is arbitrary and must not be interpreted. Mathematically, `x_bs = x_b1` could be added without loss, but **the model deliberately keeps the full per-session variables** (multi-session formulation required).
 - **"Potential" sessions:** choosing which sessions to use would need binary variables and would no longer be an LP. Mention under limitations.
 - Large volume weights make the model behave like Formulation 4, and hot spots return.
 - Hard constraints can make the model infeasible (e.g. every beamlet reaching a tumor pixel overdoses a critical pixel on the way).
