@@ -1,0 +1,10 @@
+name: sys_3021
+channels:
+  - conda-forge
+dependencies:
+  - python=3.14
+  - numpy
+  - pulp
+  - highspy
+  - matplotlib
+  - pytest
