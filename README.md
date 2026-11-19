@@ -32,23 +32,21 @@ config.json + anatomy.csv
 
 ### Code (`src/rtlp/`)
 - **`io.py`**: the only module that reads or writes files.
-  - `load_config` reads the JSON and validates it (for example, `n_S * l_T <= U_T`).
+  - `load_config` reads the JSON and validates it (for example, `n_S * l_T <= U_T`, and no negative thresholds or weights).
   - `load_anatomy` reads the CSV and checks it is rectangular, uses only codes 0-3, and has at least one tumor pixel.
   - `save_run` writes the results folder.
-- **`geometry.py`**: pure functions, with no files and no solver. Turns the grid and config into a `ProblemData` object holding:
-  - the pixel sets (tumor, critical, normal),
-  - the beamlets (one per row or column from each of the four sides),
-  - the attenuation matrix `D`, where `D = max(0, 1 - alpha*k)` and `k` counts body pixels crossed since the ray entered the body,
-  - the parameters, and the mapping between pixel index and (row, column).
+- **`geometry.py`**: pure functions, with no files and no solver. `build_sets`, `build_beamlets` and `build_D` each build one piece; `build_problem(grid, cfg)` combines them into a `ProblemData` object holding:
+  - the pixel sets: P is the body cells (code != 0) in row-major order, 0-based; `T`, `C`, `N` are integer index arrays into P,
+  - the mapping between pixel index and (row, column): `pixel_rc` (|P| x 2) and `pixel_index` (R x C grid, -1 outside the body),
+  - the beamlets: on an R x C grid, always 2R + 2C, stored as `(side, line)` tuples in the order left (rows 0..R-1), right, top (columns 0..C-1), bottom. A beamlet whose row or column has no body cell is kept, with zero dose,
+  - the attenuation matrix `D` (dense, |P| x |B|), where `D = max(0, 1 - alpha*k)` and `k` counts body pixels crossed before the ray reaches the pixel (the first body cell hit gets 1; outside cells add no depth). The anatomy is assumed to have no gaps: along any row or column, body cells are contiguous,
+  - the `Config` itself.
 - **`model.py`**: takes `ProblemData` and builds the PuLP model of Formulation 2 (the objective plus the constraints D0, T1-T3, C1-C2, N1-N2, NN, M1). It is one of only two modules that import PuLP.
 - **`solve.py`**: the other module that imports PuLP. Solves the model and returns a `Solution` (status, objective, beamlet intensities `x`, doses `d`, as numpy arrays). Handles infeasible and unbounded cases, and has an optional infeasibility diagnostic that adds slack to the critical-structure limits to show which pixels cause the conflict.
 - **`analysis.py`**: works only on `ProblemData` and `Solution` arrays; it never sees the PuLP model. Recomputes dose as `D @ x` and compares it to the solver's `d`, checks every constraint within a tolerance, and computes metrics (per session wherever a statistic isn't cumulative): objective term breakdown, critical peaks, tumor min/max dose, normal-tissue overage. Also makes the plots (dose heatmap, per-session peaks).
 
-### Tests (`tests/`)
-- **`test_geometry.py`**: checks `D` against hand-computed values on tiny grids (e.g. 3x3, alpha = 0.25).
-- **`test_model.py`**: small LPs with known answers; constraint names match the write-up.
-
-Run with `pytest`.
+### Verification
+There is no test suite. Each module is verified with throwaway scripts (e.g. `D` against hand-computed values on a 3x3 grid with alpha = 0.25; small LPs with known answers).
 
 ### Outputs (`results/`)
 - **`results/<YYYY-MM-DD_HHMM>_<label>/`**: created by `run.py` only, one folder per run. Contains the config and anatomy copy, solver status, objective, `x.npy`, `dose.npy`, `metrics.json`, and `plots/`. Any run can be reproduced from its folder.

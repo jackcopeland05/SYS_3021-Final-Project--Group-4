@@ -32,10 +32,12 @@ Deliverables (this repo covers the code only; the <=12-slide deck is handled sep
 
 ## Geometry rules (D matrix)
 
-- Beamlets enter from **all four sides, always** (4n beamlets on an n x n grid, 36 for 9x9). There is no config option to restrict sides.
-- `D_pb = max{0, 1 - alpha*k}` if beamlet b passes through p, else 0, where k is the number of body pixels the ray crossed before reaching p.
+- Grids may be R x C (not only square). Beamlets enter from **all four sides, always**: 2R + 2C beamlets (36 for 9x9). There is no config option to restrict sides. A beamlet whose row/column has no body cell is kept, with an all-zero column in D.
+- `D_pb = max{0, 1 - alpha*k}` if beamlet b passes through p, else 0, where k is the number of body pixels the ray crossed before reaching p (the first body cell hit gets D = 1).
 - **k starts counting at the body's edge** (the first non-zero cell the ray meets), not at the grid edge. Outside-body cells add no depth.
-- OPEN: whether k restarts or keeps counting if a ray leaves and re-enters the body. Ask the user before assuming.
+- **No gaps:** a row/column never goes body -> outside -> body (once a ray is in tissue, it only meets outside cells after leaving the body for good). This is assumed, not checked.
+- Index conventions (0-based): P = body cells in row-major order; `ProblemData.pixel_rc` (|P| x 2, (row, col)) and `pixel_index` (R x C, -1 outside) map both ways; T, C, N are int index arrays into P (C or N may be empty). Beamlet order: ("left", rows 0..R-1), ("right", rows), ("top", cols 0..C-1), ("bottom", cols), stored as `(side, line)` tuples. D is a dense |P| x |B| numpy array.
+- geometry.py raises no ValueErrors on config values (weights are not checked against 0.5/|C|; unreachable tumor pixels surface as infeasibility). Config values raise only in `load_config`, and only for negatives / structural problems.
 
 ## Architecture (data flows one way; no module calls a later stage)
 
@@ -54,8 +56,8 @@ Final Project/
 │   ├── solve.py         solve(model) -> Solution(status, objective, x, d as numpy arrays); handles infeasible/unbounded;
 │   │                    optional infeasibility diagnostic (temporarily add slack to C1/C2, report which pixels use it)
 │   └── analysis.py      works only on ProblemData + Solution arrays (no model object)
-├── run.py               thin CLI, no modeling logic
-├── tests/               pytest: test_geometry.py, test_model.py
+├── run.py               thin CLI, no modeling logic (adds src/ to sys.path, then imports rtlp)
+├── environment.yml      conda env sys_3021
 └── results/<YYYY-MM-DD_HHMM>_<label>/   written only by run.py
 ```
 
@@ -63,6 +65,7 @@ Design rules:
 - Only `io.py` touches the filesystem. Only `model.py` and `solve.py` import PuLP.
 - Every run is reproducible from its results folder (config + anatomy copy, status, objective, `x.npy`, `dose.npy`, `metrics.json`, `plots/`).
 - Pipeline in `run.py`: load_config -> load_anatomy -> build_problem -> build_model -> solve -> compute_metrics -> save_run.
+- Code style (user preference): fewer, larger functions with their validation checks written inline (raise ValueError naming the bad key/row), not many tiny helpers. No pytest suite in `tests/`; verify with throwaway scripts instead.
 
 ## Metrics (analysis.py)
 
@@ -82,12 +85,12 @@ Record **every non-cumulative statistic for every session**, not just in aggrega
 
 ## Commands
 
-Python 3.14 virtual environment at `.venv/` (activate with `.venv\Scripts\Activate.ps1` on Windows PowerShell).
+Conda environment `sys_3021` (Python 3.14, numpy, pulp, highspy, matplotlib), defined in `environment.yml`.
 
 ```
+conda env create -f environment.yml     # first time only
+conda activate sys_3021
 python run.py --config data/configs/baseline.json
-pytest
-pytest tests/test_geometry.py::<test_name>
 ```
 
-(These commands are the planned interface; code has not been written yet. Update this section as the code lands.)
+Status: `src/rtlp/io.py` has `Config`, `load_config`, `load_anatomy` (save_run pending). `src/rtlp/geometry.py` is done (`ProblemData`, `build_sets`, `build_beamlets`, `build_D`, `build_problem`). model, solve, analysis and run.py are not written yet. Update this section as the code lands.
