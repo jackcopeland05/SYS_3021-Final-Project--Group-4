@@ -1,0 +1,18 @@
+{
+  "label": "baseline",
+  "anatomy_path": "data/input/reference_9x9.csv",
+  "alpha": 0.08,
+  "n_S": 4,
+  "l_T": 1,
+  "L_T": 6,
+  "U_T": 9,
+  "u_C": 1.2,
+  "U_C": 4.2,
+  "u_N": 0.9,
+  "U_N": 3.2,
+  "w_pk": 1,
+  "w_C": 0.0556,
+  "w_N": 0.007353,
+  "lambda_e": 1,
+  "lambda_E": 1
+}
