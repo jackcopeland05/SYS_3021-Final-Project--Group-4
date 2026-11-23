@@ -29,7 +29,7 @@ import numpy as np
 import pulp
 from tqdm import tqdm
 
-from .model import build_model
+from model import build_model
 
 SWEEP_TOL = 1e-6  # objectives within this relative gap count as a tie (fewer sessions wins)
 

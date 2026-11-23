@@ -11,7 +11,7 @@ Conventions:
   n_S, index 0 = session 1. A metric for an empty region (C or N) is None. Unless the status is
   "Optimal", every numeric section is None and only the run information is filled in.
 - Figures are built with matplotlib.figure.Figure directly (no pyplot, so no window ever opens and
-  no global state). This module never writes files: io.save_run saves the returned figures.
+  no global state). This module never writes files: fileio.save_run saves the returned figures.
 """
 
 import matplotlib
@@ -346,7 +346,7 @@ def make_plots(problem, solution, sweep):
 def format_summary(metrics):
     """Return a short human-readable summary of `metrics` (from compute_metrics).
 
-    run.py prints it and io.save_run writes it to summary.txt, so the two never disagree.
+    run.py prints it and fileio.save_run writes it to summary.txt, so the two never disagree.
     """
     run = metrics["run"]
     sz = run["sizes"]

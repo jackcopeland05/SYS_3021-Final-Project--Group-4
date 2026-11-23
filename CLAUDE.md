@@ -42,15 +42,15 @@ Deliverables (this repo covers the code only; the <=12-slide deck is handled sep
 ## Architecture (data flows one way; no module calls a later stage)
 
 ```
-io -> geometry -> model -> solve -> analysis -> io.save_run
+fileio -> geometry -> model -> solve -> analysis -> fileio.save_run
 ```
 
 ```
 Final Project/
 ├── data/input/        sample CSVs (read-only inputs)
 ├── data/configs/        baseline.json
-├── src/rtlp/
-│   ├── io.py            ALL file I/O: load_config (validate), load_anatomy (rectangular, codes 0-3 only, >=1 tumor pixel), save_run
+├── src/                 flat: plain top-level modules, no package and no __init__.py
+│   ├── fileio.py        ALL file I/O: load_config (validate), load_anatomy (rectangular, codes 0-3 only, >=1 tumor pixel), save_run
 │   ├── geometry.py      pure functions, no files/solver: build_sets, build_beamlets, build_D, build_problem(grid, cfg) -> ProblemData
 │   ├── model.py         build_model(ProblemData) -> LPModel(prob, x, d, z, e, E): PuLP model of Formulation 2
 │   ├── solve.py         solve(LPModel) -> Solution(status, objective, x, d, z, e, E as numpy arrays);
@@ -58,13 +58,14 @@ Final Project/
 │   │                    infeasible/unbounded. An infeasible status is itself the result: no slack is ever added
 │   │                    to the hard constraints (T1-T3, C1, C2) to force feasibility.
 │   └── analysis.py      works only on ProblemData + Solution arrays (no model object)
-├── run.py               thin CLI, no modeling logic (adds src/ to sys.path, then imports rtlp)
+├── run.py               thin CLI, no modeling logic (adds src/ to sys.path, then imports the modules by bare name)
 ├── environment.yml      conda env sys_3021
 └── results/<YYYY-MM-DD_HHMM>_<label>/   written only by run.py
 ```
 
 Design rules:
-- Only `io.py` touches the filesystem. Only `model.py` and `solve.py` import PuLP.
+- Only `fileio.py` touches the filesystem. Only `model.py` and `solve.py` import PuLP.
+- `src/` is flat (no package). Modules import each other with plain absolute imports (`from fileio import Config`, `from model import build_model`); there are no relative imports, because they only work inside a package. This works because `run.py` puts `src/` on `sys.path`, and throwaway scripts must do the same. The file-I/O module is `fileio.py` and **must not be renamed to `io.py`**: with `src/` on `sys.path`, `import io` would still get the standard-library `io`, which Python loads at startup, so `from io import load_config` would fail. Any new module needs a name that doesn't clash with the standard library or an installed package.
 - Every run is reproducible from its results folder (config + anatomy copy, status, objective, `x.csv`, `dose.csv`, `metrics.json`, `plots/`).
 - Pipeline in `run.py`: load_config -> load_anatomy -> build_problem -> solve_sessions (build_model + solve per k) -> compute_metrics -> make_plots -> format_summary -> save_run.
 - tqdm is used for progress display only, and only in `solve.py`: `solve_sessions` shows one bar over k ("Solving sessions k"); a bare `solve` call shows a live elapsed-time counter (one solve call reports no progress), which `solve_sessions` turns off with `show_progress=False`. A user decision outside `model.md`: do not remove it or spread it to other modules without asking.
@@ -97,7 +98,7 @@ conda activate sys_3021
 python run.py --config data/configs/baseline.json
 ```
 
-Status: the pipeline is complete. `src/rtlp/io.py` has `Config`, `load_config`, `load_anatomy`, `save_run`. `src/rtlp/geometry.py` is done (`ProblemData`, `build_sets`, `build_beamlets`, `build_D`, `build_problem`). `src/rtlp/model.py` is done (`LPModel`, `build_model`). `src/rtlp/solve.py` is done (`Solution`, `solve`). `src/rtlp/analysis.py` is done (`TOL`, `compute_metrics`, `make_plots`, `format_summary`). `run.py` is done. Update this section as the code lands.
+Status: the pipeline is complete. `src/fileio.py` has `Config`, `load_config`, `load_anatomy`, `save_run`. `src/geometry.py` is done (`ProblemData`, `build_sets`, `build_beamlets`, `build_D`, `build_problem`). `src/model.py` is done (`LPModel`, `build_model`). `src/solve.py` is done (`Solution`, `solve`). `src/analysis.py` is done (`TOL`, `compute_metrics`, `make_plots`, `format_summary`). `run.py` is done. Update this section as the code lands.
 
 ## model.py conventions
 
@@ -116,7 +117,7 @@ Status: the pipeline is complete. `src/rtlp/io.py` has `Config`, `load_config`, 
 
 ## analysis.py conventions
 
-- `compute_metrics(problem, solution, sweep) -> (metrics, dose)`; `make_plots(problem, solution, sweep) -> {name: Figure}`; `format_summary(metrics) -> str` (the text run.py prints and save_run writes to `summary.txt`; infeasible runs get a short version). analysis never writes files: `io.save_run` dumps `metrics` to `metrics.json`, `dose` to `dose.csv` and calls `fig.savefig` for each figure into `plots/<name>.png`.
+- `compute_metrics(problem, solution, sweep) -> (metrics, dose)`; `make_plots(problem, solution, sweep) -> {name: Figure}`; `format_summary(metrics) -> str` (the text run.py prints and save_run writes to `summary.txt`; infeasible runs get a short version). analysis never writes files: `fileio.save_run` dumps `metrics` to `metrics.json`, `dose` to `dose.csv` and calls `fig.savefig` for each figure into `plots/<name>.png`.
 - Canonical dose is `D @ x`; the solver's d is used only in the (D0) check. z, e, E are recomputed from it (z_s = 0 when C is empty).
 - One absolute tolerance `TOL = 1e-6` for every check, every over-limit count and every binding test. Failed checks never raise: each tag in `metrics["checks"]` has `passed` and `worst_violation`, summarized by `metrics["all_checks_passed"]`. The objective check is relative: |recomputed - solver| <= TOL * max(1, |solver|).
 - `metrics` is plain JSON types only (no NaN; use `json.dumps(..., allow_nan=False)`). Per-session values are lists of length n_S (index 0 = session 1); the offending-pixel lists use 0-based sessions. An empty C or N gives `None` for that region's metrics. Unless the status is "Optimal", only `metrics["run"]` is filled in, every other section is `None`, and `dose` is NaN.
@@ -132,3 +133,4 @@ Status: the pipeline is complete. `src/rtlp/io.py` has `Config`, `load_config`, 
 - `save_run(root, config_path, problem, solution, metrics, dose, figures, summary) -> Path` (problem/solution/dose are the chosen k) writes `results/<YYYY-MM-DD_HHMM>_<label>/` (local time; suffix `_2`, `_3`, ... if it exists, never overwrite): `anatomy.csv` (byte copy), `config.json` (the original JSON, same key order, with `anatomy_path` rewritten to the root-relative path of the copied `anatomy.csv`), `metrics.json` (`allow_nan=False`), `summary.txt`, `plots/<name>.png` at 150 dpi, and, only when Optimal, `x.csv` (`side, line, s1..sk`) and `dose.csv` (`row, col, label, s1..sk, cumulative`) at `%.17g`. No .npy files. A folder is written for every completed run, whatever its status. The copied config keeps the original n_S (the maximum), so a re-run repeats the sweep.
 - Reproduce a run: `python run.py --config results/<run>/config.json`.
 - Verified 2026-11-19: baseline exits 0 with objective 3.5727 and all checks passed; a second run in the same minute gets `_2`; L_T = 10 > U_T gives an Infeasible folder (anatomy plot only) and exit 0; alpha = -1 and a missing config give `error: ...`, exit 1 and no folder; re-running from a results folder's `config.json` from another working directory reproduces 3.5727.
+- Verified 2026-11-22 after flattening `src/rtlp/` into `src/` (with `io.py` renamed to `fileio.py`): baseline still exits 0 with objective 3.5727, k = 4 chosen and all checks passed.

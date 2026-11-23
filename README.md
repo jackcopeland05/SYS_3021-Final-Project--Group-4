@@ -2,7 +2,7 @@
 
 A short guide to what each file does and how the pieces connect. For the exact LP, see `assumptions/model.md`. For rules aimed at coding agents, see `CLAUDE.md`.
 
-> Status: the full pipeline is implemented (io, geometry, model, solve, analysis, run.py).
+> Status: the full pipeline is implemented (fileio, geometry, model, solve, analysis, run.py).
 
 ## How a run works
 
@@ -15,8 +15,8 @@ Data moves in one direction through the pipeline, and no stage calls a later one
 ```
 config.json + anatomy.csv
         |
-      io.py  ->  geometry.py  ->  model.py  ->  solve.py  ->  analysis.py  ->  io.py (save_run)
-     (load)      (sets, D)       (PuLP LP)     (solve)       (metrics, plots)     (write results)
+    fileio.py  ->  geometry.py  ->  model.py  ->  solve.py  ->  analysis.py  ->  fileio.py (save_run)
+     (load)        (sets, D)       (PuLP LP)     (solve)       (metrics, plots)     (write results)
 ```
 
 `run.py` strings these stages together and contains no modeling logic.
@@ -30,8 +30,10 @@ config.json + anatomy.csv
 - **`data/input/*.csv`**: cross-section grids, read-only. Comma-separated integers, no header. Each cell is an integer label: `0` outside body, `1` tumor, `2` critical, `3` normal. `reference_9x9.csv` is a re-created stand-in for the reference instance (4 tumor / 9 critical / 68 normal), for plausibility checks only.
 - **`data/configs/*.json`**: every tunable parameter lives here, as a flat JSON object: `label` (names the results folder), `anatomy_path` (relative to the project root), `alpha`, `n_S`, the thresholds `l_T, L_T, U_T, u_C, U_C, u_N, U_N`, and the five weights `w_pk, w_C, w_N, lambda_e, lambda_E`. Weights are stored as final numbers: `w_C` and `w_N` in `baseline.json` are 0.5/|C| and 0.5/|N| for the 9x9 reference grid, and **must be recomputed by hand when the anatomy changes**. Sets and the attenuation matrix are never stored here; they are recomputed each run.
 
-### Code (`src/rtlp/`)
-- **`io.py`**: the only module that reads or writes files.
+### Code (`src/`)
+The modules sit directly in `src/`, not in a package. `run.py` adds `src/` to Python's import path, and the modules import each other by bare name (e.g. `from fileio import Config`). A throwaway script that imports them needs the same `sys.path` line.
+
+- **`fileio.py`**: the only module that reads or writes files. It is not called `io.py` because that name would clash with Python's built-in `io` module.
   - `load_config` reads the JSON and validates it (for example, `l_T <= U_T`, and no negative thresholds or weights). `n_S` is the maximum number of sessions; the plan chooses how many to use.
   - `load_anatomy` reads the CSV and checks it is rectangular, uses only codes 0-3, and has at least one tumor pixel.
   - `save_run` writes the results folder (see Outputs). It never overwrites: a second run in the same minute gets a `_2` suffix.

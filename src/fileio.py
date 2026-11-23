@@ -149,9 +149,12 @@ def save_run(root, config_path, problem, solution, metrics, dose, figures, summa
     """Write one run to a new folder results/<YYYY-MM-DD_HHMM>_<label>/ under `root`; return its Path.
 
     root: project root (anatomy_path and results/ are relative to it).
+
     config_path: the config file the run was loaded from.
     problem, solution, dose: the chosen number of sessions k (problem.cfg.n_S == k).
+    
     Contents: anatomy.csv (byte copy), config.json (the original JSON with its original n_S, and
+    
     anatomy_path pointing at the copied anatomy.csv, so `python run.py --config
     results/<run>/config.json` repeats the run), metrics.json, summary.txt, plots/<name>.png (150 dpi)
     and, only if the status is "Optimal", two labeled CSVs written at full precision (%.17g):

@@ -17,7 +17,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from .io import Config
+from fileio import Config
 
 
 @dataclass(frozen=True)
@@ -95,7 +95,7 @@ def build_D(grid, pixel_index, beamlets, alpha):
 
 
 def build_problem(grid, cfg):
-    """Build the ProblemData for anatomy `grid` (from io.load_anatomy) and Config `cfg`."""
+    """Build the ProblemData for anatomy `grid` (from fileio.load_anatomy) and Config `cfg`."""
     pixel_rc, pixel_index, T, C, N = build_sets(grid)
     beamlets = build_beamlets(grid)
     D = build_D(grid, pixel_index, beamlets, cfg.alpha)

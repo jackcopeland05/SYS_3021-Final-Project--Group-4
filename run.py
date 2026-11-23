@@ -18,10 +18,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from rtlp.analysis import compute_metrics, format_summary, make_plots  # noqa: E402
-from rtlp.geometry import build_problem  # noqa: E402
-from rtlp.io import load_anatomy, load_config, save_run  # noqa: E402
-from rtlp.solve import solve_sessions  # noqa: E402
+from analysis import compute_metrics, format_summary, make_plots  # noqa: E402
+from geometry import build_problem  # noqa: E402
+from fileio import load_anatomy, load_config, save_run  # noqa: E402
+from solve import solve_sessions  # noqa: E402
 
 
 def main():
