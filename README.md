@@ -47,13 +47,11 @@ The modules sit directly in `src/`, not in a package. `run.py` adds `src/` to Py
 - **`solve.py`**: the other module that imports PuLP. Solves the model with HiGHS (CBC if HiGHS is missing) and returns a `Solution`: status as a string, objective, `x`, `d`, `z`, `e`, `E` as float arrays, plus the solver name and solve time. Any status (infeasible, unbounded, time limit, ...) is returned rather than raised; when the status is not optimal, the objective and arrays are NaN. No slack is ever added to the hard constraints to force a solution. `solve_sessions(problem)` chooses the number of sessions: it solves the LP once for every k = 1..K (K = min(n_S, floor(U_T / l_T)), or n_S when l_T = 0) and keeps the lowest objective, preferring fewer sessions on ties. A tqdm bar shows progress over k.
 - **`analysis.py`**: works only on `ProblemData` and `Solution` arrays; it never sees the PuLP model. Recomputes dose as `D @ x` and compares it to the solver's `d`, checks every constraint within a tolerance, and computes metrics (per session wherever a statistic isn't cumulative): objective term breakdown, critical peaks, tumor min/max dose, normal-tissue overage. Also makes the plots (anatomy, cumulative dose heatmap, per-session peaks) as in-memory figures, and `format_summary` turns the metrics into the plain-text summary.
 
-### Verification
-There is no test suite. Each module is verified with throwaway scripts (e.g. `D` against hand-computed values on a 3x3 grid with alpha = 0.25; small LPs with known answers).
 
 ### Outputs (`results/`)
 - **`results/<YYYY-MM-DD_HHMM>_<label>/`**: created by `run.py` only, one folder per run: `anatomy.csv` (copy), `config.json` (copy whose `anatomy_path` points at that `anatomy.csv`), `x.csv` (beamlet intensities: `side, line, s1..sk`), `dose.csv` (`D @ x` per body pixel: `row, col, label, s1..sk, cumulative`; both only when a plan exists), `metrics.json`, `summary.txt` (status, sessions used with the objective for every k, objective and key metrics, same text as the console) and `plots/*.png` (including `objective_by_sessions.png`). Reproduce a run with `python run.py --config results/<run>/config.json`.
 
-### Reference material
-- **`assumptions/model.md`**: the LP being implemented (Formulation 2), with the group's modeling decisions and the reference test instance.
-- **`reference documents/`**: the assignment, the five candidate formulations, and the radiation therapy background. Read-only.
-- **`CLAUDE.md`**: project rules and context for coding agents.
+### Notes on Parameter Selection
+- **w_pk, w_C, w_N**: these three weights define the tradeoff the analyst is willing to make between critical peaks, cumulative critical radiation, and cumulative healthy radiation. 
+- We chose to frame the 
+
