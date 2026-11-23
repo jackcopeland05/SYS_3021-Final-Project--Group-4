@@ -7,3 +7,6 @@ __pycache__/
 
 # Run outputs written by run.py
 results/
+
+# Editor settings
+.vscode/
