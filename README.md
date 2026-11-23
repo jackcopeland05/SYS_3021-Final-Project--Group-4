@@ -53,5 +53,7 @@ The modules sit directly in `src/`, not in a package. `run.py` adds `src/` to Py
 
 ### Notes on Parameter Selection
 - **w_pk, w_C, w_N**: these three weights define the tradeoff the analyst is willing to make between critical peaks, cumulative critical radiation, and cumulative healthy radiation. 
-- We chose to frame the 
+- The following values are used for each: w_pk=10, w_C=5, w_N=1
+  - This is intended to be a directional expression of severity (i.e., peak radiation is 2x as bad as radiation to critical structures and 10x as bad a regular radiation to normal structures)
+  - lambda_e=2 and lambda_E=5 are used with the same directional sense in mind
 
