@@ -27,7 +27,7 @@ config.json + anatomy.csv
 - **`run.py`**: command-line entry point. Takes one argument, `--config <path>`, and runs the pipeline above end to end. Prints a summary and the results folder path. Exits 0 whenever the pipeline finishes (an infeasible LP is a result, not an error); exits 1 with `error: <message>` on a bad config/anatomy or a missing file, and then writes nothing.
 
 ### Inputs (`data/`)
-- **`data/input/*.csv`**: cross-section grids, read-only. Comma-separated integers, no header. Each cell is an integer label: `0` outside body, `1` tumor, `2` critical, `3` normal. `reference_9x9.csv` is a re-created stand-in for the reference instance (4 tumor / 9 critical / 68 normal), for plausibility checks only.
+- **`data/input/*.csv`**: cross-section grids, read-only. Comma-separated integers, no header. Each cell is an integer label: `0` outside body, `1` tumor, `2` critical, `3` normal. 
 - **`data/configs/*.json`**: every tunable parameter lives here, as a flat JSON object: `label` (names the results folder), `anatomy_path` (relative to the project root), `alpha`, `n_S`, the thresholds `l_T, L_T, U_T, u_C, U_C, u_N, U_N`, and the five weights `w_pk, w_C, w_N, lambda_e, lambda_E`. Weights are stored as final numbers: `w_C` and `w_N` in `baseline.json` are 0.5/|C| and 0.5/|N| for the 9x9 reference grid, and **must be recomputed by hand when the anatomy changes**. Sets and the attenuation matrix are never stored here; they are recomputed each run.
 
 ### Code (`src/`)
@@ -56,4 +56,14 @@ The modules sit directly in `src/`, not in a package. `run.py` adds `src/` to Py
 - The following values are used for each: w_pk=10, w_C=5, w_N=1
   - This is intended to be a directional expression of severity (i.e., peak radiation is 2x as bad as radiation to critical structures and 10x as bad a regular radiation to normal structures)
   - lambda_e=2 and lambda_E=5 are used with the same directional sense in mind
+- **Stated Parameters**
+  - These are the parameters the team assumes to be given explicitly upon testing:
+    - alpha
+    - u_C
+    - U_C
+    - u_N
+    - U_N
+    - l_t
+    - L_T
+    - U_T
 
