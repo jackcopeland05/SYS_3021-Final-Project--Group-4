@@ -1,0 +1,23 @@
+Status: Optimal  (solver HiGHS, 0.06 s)
+Sizes:  |P|=198  |T|=12  |C|=56  |N|=130  |B|=70  n_S=6
+Sessions used: 6  (best of k = 1..7; max n_S = 7; ties go to fewer sessions)
+  k   status        objective
+  1   Infeasible          n/a
+  2   Infeasible          n/a
+  3   Infeasible          n/a
+  4   Optimal        805.4954
+  5   Optimal        771.2270
+  6   Optimal        758.3992  <- chosen
+  7   Infeasible          n/a
+Objective: 758.3992  (recomputed 758.3992)
+  term                 weighted    unweighted
+  peak sum               42.0000        4.2000
+  critical volume       292.4534       58.4907
+  normal volume         214.2279      214.2279
+  session overage         8.1248        4.0624
+  cumulative overage    201.5932       40.3186
+Tumor dose: per-session min [1.000, 1.000, 1.000, 1.000, 1.000, 1.000], cumulative min/max 6.000 / 7.783
+Critical peaks z_s: [0.713, 0.679, 0.772, 0.679, 0.679, 0.679]  (sum 4.200), cumulative max 4.200, total dose 58.491
+Normal over u_N per session: count [5, 5, 5, 5, 5, 5], total [0.557, 0.735, 0.566, 0.735, 0.735, 0.735]
+Normal over U_N cumulative: count 32, total 40.3186
+All checks passed (tol 1e-06).
