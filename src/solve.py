@@ -9,7 +9,9 @@ Conventions:
 - Values are read by array slot from the LPModel arrays, never by parsing variable names, and are
   returned raw (no clipping or rounding); analysis.py does the tolerance checks.
 - Unless the status is "Optimal", objective is NaN and every array is NaN-filled with the same
-  shape it would have had, so later stages branch on status, never on None.
+  shape it would have had, so later stages branch on status, never on None. When Optimal, a
+  variable PuLP never sent to the solver (zero coefficient in every row and in the objective, e.g.
+  x of a beamlet whose line misses the body) has no value and is reported as 0.
 - While a single solve runs, a tqdm counter shows elapsed time (a solve call reports no progress,
   so this only shows the run is alive). solve_sessions turns that off and shows one tqdm bar over
   the number of sessions k instead.
@@ -92,7 +94,9 @@ def solve(lp_model, show_progress=True):
         if optimal:
             for idx, var in np.ndenumerate(arr):
                 v = var.value()
-                out[idx] = np.nan if v is None else float(v)
+                # None = PuLP dropped the variable (it has a zero coefficient everywhere, e.g. a
+                # beamlet whose line has no body cell); any value is optimal, so report 0.
+                out[idx] = 0.0 if v is None else float(v)
         return out
 
     return Solution(
