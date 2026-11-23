@@ -1,6 +1,6 @@
 # README
 
-A short guide to what each file does and how the pieces connect. For the exact LP, see `assumptions/model.md`. For rules aimed at coding agents, see `CLAUDE.md`.
+A short guide to what each file does and how the pieces connect. For the exact LP, see `assumptions/model.md`.
 
 
 ## How a run works
