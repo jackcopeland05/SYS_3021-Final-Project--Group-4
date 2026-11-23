@@ -2,7 +2,6 @@
 
 A short guide to what each file does and how the pieces connect. For the exact LP, see `assumptions/model.md`. For rules aimed at coding agents, see `CLAUDE.md`.
 
-> Status: the full pipeline is implemented (fileio, geometry, model, solve, analysis, run.py).
 
 ## How a run works
 
@@ -28,7 +27,7 @@ config.json + anatomy.csv
 
 ### Inputs (`data/`)
 - **`data/input/*.csv`**: cross-section grids, read-only. Comma-separated integers, no header. Each cell is an integer label: `0` outside body, `1` tumor, `2` critical, `3` normal. 
-- **`data/configs/*.json`**: every tunable parameter lives here, as a flat JSON object: `label` (names the results folder), `anatomy_path` (relative to the project root), `alpha`, `n_S`, the thresholds `l_T, L_T, U_T, u_C, U_C, u_N, U_N`, and the five weights `w_pk, w_C, w_N, lambda_e, lambda_E`. Weights are stored as final numbers: `w_C` and `w_N` in `baseline.json` are 0.5/|C| and 0.5/|N| for the 9x9 reference grid, and **must be recomputed by hand when the anatomy changes**. Sets and the attenuation matrix are never stored here; they are recomputed each run.
+- **`data/configs/*.json`**: every tunable parameter lives here, as a flat JSON object: `label` (names the results folder), `anatomy_path` (relative to the project root), `alpha`, `n_S`, the thresholds `l_T, L_T, U_T, u_C, U_C, u_N, U_N`, and the five weights `w_pk, w_C, w_N, lambda_e, lambda_E`. Weights are stored as final numbers (more on parameter selection below).
 
 ### Code (`src/`)
 The modules sit directly in `src/`, not in a package. `run.py` adds `src/` to Python's import path, and the modules import each other by bare name (e.g. `from fileio import Config`). A throwaway script that imports them needs the same `sys.path` line.
@@ -45,7 +44,7 @@ The modules sit directly in `src/`, not in a package. `run.py` adds `src/` to Py
   - the `Config` itself.
 - **`model.py`**: `build_model(problem)` takes `ProblemData` and builds the PuLP model of Formulation 2 (the objective plus the constraints D0, T1-T3, C1-C2, N1-N2, NN, M1). It returns an `LPModel`: the PuLP problem plus every variable in a numpy array (`x`, `d`, `z`, `e`, `E`), so later stages read values by position, never by name. Row `i` of `e` and `E` belongs to normal pixel `problem.N[i]`. It is one of only two modules that import PuLP.
 - **`solve.py`**: the other module that imports PuLP. Solves the model with HiGHS (CBC if HiGHS is missing) and returns a `Solution`: status as a string, objective, `x`, `d`, `z`, `e`, `E` as float arrays, plus the solver name and solve time. Any status (infeasible, unbounded, time limit, ...) is returned rather than raised; when the status is not optimal, the objective and arrays are NaN. No slack is ever added to the hard constraints to force a solution. `solve_sessions(problem)` chooses the number of sessions: it solves the LP once for every k = 1..K (K = min(n_S, floor(U_T / l_T)), or n_S when l_T = 0) and keeps the lowest objective, preferring fewer sessions on ties. A tqdm bar shows progress over k.
-- **`analysis.py`**: works only on `ProblemData` and `Solution` arrays; it never sees the PuLP model. Recomputes dose as `D @ x` and compares it to the solver's `d`, checks every constraint within a tolerance, and computes metrics (per session wherever a statistic isn't cumulative): objective term breakdown, critical peaks, tumor min/max dose, normal-tissue overage. Also makes the plots (anatomy, cumulative dose heatmap, per-session peaks) as in-memory figures, and `format_summary` turns the metrics into the plain-text summary.
+- **`analysis.py`**: works only on `ProblemData` and `Solution` arrays; it never sees the PuLP model. Provides objective term breakdown, critical peaks, tumor min/max dose, normal-tissue overage. Also makes the plots (anatomy, cumulative dose heatmap, per-session peaks) as in-memory figures, and `format_summary` turns the metrics into the plain-text summary.
 
 
 ### Outputs (`results/`)
